@@ -31,46 +31,13 @@ impl Editor {
                          16,
                          Color::rgb(255, 255, 255));
 
-        let mut string = false;
 
-
+        let mut is_string = false;
         for (y, row) in self.buffer.lines().enumerate() {
             for (x, c) in row.chars().enumerate() {
-                // TODO: Move outta here
-                let color = if self.options.highlight {
-                    match c {
-                        '\'' | '"' => {
-                            string = !string;
-                            (226, 225, 167) //(167, 222, 156)
-                        }
-                        _ if string => (226, 225, 167), //(167, 222, 156)
-                        '!' |
-                        '@' |
-                        '#' |
-                        '$' |
-                        '%' |
-                        '^' |
-                        '&' |
-                        '|' |
-                        '*' |
-                        '+' |
-                        '-' |
-                        '/' |
-                        ':' |
-                        '=' |
-                        '<' |
-                        '>' => (198, 83, 83), //(228, 190, 175), //(194, 106, 71),
-                        '.' | ',' => (241, 213, 226),
-                        '(' | ')' | '[' | ']' | '{' | '}' => (164, 212, 125), //(195, 139, 75),
-                        '0' ... '9' => (209, 209, 177),
-                        _ => (255, 255, 255),
-                    }
-                } else {
-                    (255, 255, 255)
-                };
-
+                let color = self.color_per_char(c, &mut is_string);
                 let c = if c == '\t' {
-                    ' '
+                    ' '     // XXX: Do we want one space or... four?
                 } else {
                     c
                 };
@@ -96,6 +63,42 @@ impl Editor {
         self.window.sync();
     }
 
+    /// Paint the chars
+    fn color_per_char(&self, c: char, is_string: &mut bool) -> (u8, u8, u8) {
+        let color = if self.options.highlight {
+            match c {
+                '\'' | '"' => {
+                    *is_string = !*is_string;
+                    (226, 225, 167) //(167, 222, 156)
+                }
+                _ if *is_string => (226, 225, 167), //(167, 222, 156)
+                '!' |
+                '@' |
+                '#' |
+                '$' |
+                '%' |
+                '^' |
+                '&' |
+                '|' |
+                '*' |
+                '+' |
+                '-' |
+                '/' |
+                ':' |
+                '=' |
+                '<' |
+                '>' => (198, 83, 83), //(228, 190, 175), //(194, 106, 71),
+                '.' | ',' => (241, 213, 226),
+                '(' | ')' | '[' | ']' | '{' | '}' => (164, 212, 125), //(195, 139, 75),
+                '0' ... '9' => (209, 209, 177),
+                _ => (255, 255, 255),
+            }
+        } else {
+            (255, 255, 255)
+        };
+        color
+    }
+
     /// Redraw the status bar
     pub fn redraw_status_bar(&mut self) {
         let h = self.window.height();
@@ -114,7 +117,13 @@ impl Editor {
                          18,
                          Color::rgba(74, 74, 74, 255));
 
-        self.draw_status_bar();
+        status_bar(self, self.status_bar.mode.to_owned(), 0, 4);
+        let sb_file = self.status_bar.file.clone();
+        status_bar(self, sb_file, 1, 4);
+        let sb_cmd = self.status_bar.cmd.clone();
+        status_bar(self, sb_cmd, 2, 4);
+        let sb_msg = self.status_bar.msg.clone();
+        status_bar(self, sb_msg, 3, 4);
 
         for (n, c) in self.prompt.chars().enumerate() {
             self.window.char(n as i32 * 8, h as i32 - 16 - 1, c, Color::rgb(255, 255, 255));
@@ -123,42 +132,36 @@ impl Editor {
         self.window.sync();
     }
 
-    #[cfg(feature = "orbital")]
-    fn draw_status_bar(&mut self) {
-        let h = self.window.height();
-        let w = self.window.width();
+}
 
-        let mode = self.cursor().mode;
+// TODO take &str instead
+#[cfg(feature = "orbital")]
+fn status_bar(editor: &mut Editor, text: String, a: u32, b: u32) {
 
-        let items = [
-            (self.status_bar.mode, 0, 4),
-            (&self.status_bar.file, 1, 4),
-            (&self.status_bar.cmd, 2, 4),
-            (&self.status_bar.msg, 3, 4)
-        ];
+    let h = editor.window.height();
+    let w = editor.window.width();
+    // let y = editor.y();
+    let mode = editor.cursor().mode;
 
-        for &(text, a, b) in items.iter() {
-            for (n, c) in (if text.len() as u32 > w / (8 * b) {
-                              text.chars().take((w / (8 * b) - 5) as usize).chain(vec!['.'; 3]).collect::<Vec<_>>()
-                          } else {
-                              text.chars().collect()
-                          })
-                          .into_iter()
-                          .enumerate() {
+    for (n, c) in (if text.len() as u32 > w / (8 * b) {
+                      text.chars().take((w / (8 * b) - 5) as usize).chain(vec!['.'; 3]).collect::<Vec<_>>()
+                  } else {
+                      text.chars().collect()
+                  })
+                  .into_iter()
+                  .enumerate() {
 
-                self.window.char(((w * a) / b) as i32 + (n as i32 * 8),
-                                    h as i32 - 16 - 1 -
-                                    {
-                                        if mode == Mode::Primitive(PrimitiveMode::Prompt) {
-                                            16 + 1 + 1
-                                        } else {
-                                            0
-                                        }
-                                    },
-                                    c,
-                                    Color::rgb(255, 255, 255));
-            }
-        }
+        editor.window.char(((w * a) / b) as i32 + (n as i32 * 8),
+                            h as i32 - 16 - 1 -
+                            {
+                                if mode == Mode::Primitive(PrimitiveMode::Prompt) {
+                                    16 + 1 + 1
+                                } else {
+                                    0
+                                }
+                            },
+                            c,
+                            Color::rgb(255, 255, 255));
     }
 }
 
@@ -166,7 +169,7 @@ impl Editor {
 pub struct StatusBar {
     /// The current mode
     pub mode: &'static str,
-    /// The cureent char
+    /// The current char
     pub file: String,
     /// The current command
     pub cmd: String,
